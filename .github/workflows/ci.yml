@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  test:
+    runs-on: windows-latest # 桌宠仅支持 Windows，psutil/pynvml 行为以 Windows 为准
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e .[dev]
+      - run: pytest
+
+  build:
+    needs: [lint, test]
+    if: github.event_name == 'workflow_dispatch' # 打包按需手动触发
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .[dev]
+      - run: pyinstaller --noconfirm dafeiyu_pet.spec
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dafeiyu-pet-exe
+          path: dist/*.exe

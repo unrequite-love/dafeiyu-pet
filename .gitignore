@@ -1,5 +1,6 @@
-# 运行时生成
+# 运行时生成（含 API Key，严禁入库）
 config.json
+logs/
 
 # 虚拟环境
 .venv/
@@ -7,8 +8,12 @@ config.json
 # 打包产物
 build/
 dist/
-*.spec
+*.egg-info/
 
 # Python 缓存
 __pycache__/
 *.pyc
+
+# 工具缓存
+.pytest_cache/
+.ruff_cache/

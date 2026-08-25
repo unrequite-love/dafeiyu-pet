@@ -1,4 +1,4 @@
-PySide6>=6.5
-requests
-psutil
-pynvml
+PySide6>=6.5,<7
+requests>=2.31,<3
+psutil>=5.9,<8
+pynvml>=11.4,<12

@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dafeiyu-pet"
+version = "1.0.0"
+description = "大肥鱼桌宠 —— DeepSeek 二创鲸鱼娘透明桌面宠物（Windows）"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.5,<7",
+    "requests>=2.31,<3",
+    "psutil>=5.9,<8",
+    "pynvml>=11.4,<12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+dafeiyu-pet = "dafeiyu_pet.main:run"
+
+[tool.setuptools]
+packages = ["dafeiyu_pet", "dafeiyu_pet.services", "dafeiyu_pet.ui"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM"]
+ignore = [
+    "SIM117",  # Qt 信号连接场景下嵌套 with/if 更直观
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
