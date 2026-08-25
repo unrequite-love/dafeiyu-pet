@@ -17,7 +17,8 @@ DEFAULTS: dict[str, Any] = {
     "x": None,
     "y": None,
     "ds_api_key": "",
-    "city": "汕头",
+    "ds_thinking": False,
+    "city": "深圳",
 }
 
 VALID_MODES = ("wander", "follow", "still")

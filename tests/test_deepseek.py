@@ -1,6 +1,16 @@
-"""DeepSeek 消息构建/历史/截断纯逻辑测试（不发真实请求）。"""
-from dafeiyu_pet.constants import DS_SYSTEM_PROMPT, MAX_HISTORY
-from dafeiyu_pet.services.deepseek import ChatHistory, build_messages, truncate_reply
+"""DeepSeek 消息构建/历史/截断/请求体纯逻辑测试（不发真实请求）。"""
+import pytest
+
+from dafeiyu_pet.constants import DS_MODEL, DS_SYSTEM_PROMPT, MAX_HISTORY
+from dafeiyu_pet.services.deepseek import (
+    ChatHistory,
+    DeepSeekError,
+    build_messages,
+    build_payload,
+    chat_url,
+    extract_reply,
+    truncate_reply,
+)
 
 
 def test_build_messages_structure():
@@ -45,3 +55,43 @@ def test_chat_history_default_limit():
     assert h.max_entries == MAX_HISTORY
     h.entries().clear()  # 返回副本，内部不受影响
     assert len(h) == 0
+
+
+def test_chat_url_no_v1_prefix():
+    url = chat_url()
+    assert url == "https://api.deepseek.com/chat/completions"
+    assert "/v1" not in url
+    assert chat_url("https://api.deepseek.com/").endswith("/chat/completions")
+
+
+def test_build_payload_plain_mode():
+    msgs = [{"role": "user", "content": "hi"}]
+    p = build_payload(msgs, thinking=False)
+    assert p["model"] == DS_MODEL
+    assert p["stream"] is False
+    assert p["thinking"] == {"type": "disabled"}
+    assert p["max_tokens"] == 100
+    assert "reasoning_effort" not in p
+
+
+def test_build_payload_thinking_mode():
+    msgs = [{"role": "user", "content": "hi"}]
+    p = build_payload(msgs, thinking=True)
+    assert p["thinking"] == {"type": "enabled"}
+    assert p["reasoning_effort"] == "high"
+    assert p["stream"] is False
+    # 思考模式不设 max_tokens（推理需余量）、不发 temperature
+    assert "max_tokens" not in p
+    assert "temperature" not in p
+
+
+def test_extract_reply_prefers_final_content():
+    data = {"choices": [{"message": {"content": "你好呀", "reasoning_content": "用户在打招呼..."}}]}
+    assert extract_reply(data) == "你好呀"
+
+
+def test_extract_reply_empty_raises():
+    with pytest.raises(DeepSeekError):
+        extract_reply({"choices": [{"message": {"content": ""}}]})
+    with pytest.raises(DeepSeekError):
+        extract_reply({"choices": [{"message": {"content": None}}]})

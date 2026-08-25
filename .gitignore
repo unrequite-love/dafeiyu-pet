@@ -17,3 +17,7 @@ __pycache__/
 # 工具缓存
 .pytest_cache/
 .ruff_cache/
+
+# IDE
+.idea/
+.vscode/

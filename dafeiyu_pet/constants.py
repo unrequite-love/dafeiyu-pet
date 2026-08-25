@@ -18,18 +18,20 @@ RAM_WARN_PERCENT = 95
 GPU_WARN_TEMP_C = 80
 MONITOR_INTERVAL_MS = 10_000
 
-# ---- DeepSeek 对话 ----
-DS_BASE_URL = "https://api.deepseek.com/v1"
-DS_MODEL = "deepseek-chat"
+# ---- DeepSeek 对话（V4 Pro 接口：无 /v1 前缀） ----
+DS_BASE_URL = "https://api.deepseek.com"
+DS_MODEL = "deepseek-v4-flash"
 DS_SYSTEM_PROMPT = "你是桌面宠物大肥鱼，贱兮兮但可爱，每句话不超过25字，偶尔吐槽主人但别真骂人。"
-DS_TIMEOUT_S = 10.0
-DS_MAX_TOKENS = 100
-DS_TEMPERATURE = 0.9
+DS_TIMEOUT_S = 10.0  # 普通模式超时(s)
+DS_THINKING_TIMEOUT_S = 60.0  # 深度思考模式超时(s)，推理耗时更长
+DS_MAX_TOKENS = 100  # 普通模式输出上限
+DS_TEMPERATURE = 0.9  # 采样温度（仅普通模式发送）
+DS_REASONING_EFFORT = "high"  # 深度思考推理力度
 DS_REPLY_MAX_LEN = 30  # 回复超过该长度则截断
 MAX_HISTORY = 40  # 对话历史最多保留条数
 
 # ---- 天气 ----
-DEFAULT_CITY = "汕头"
+DEFAULT_CITY = "深圳"
 WEATHER_TIMEOUT_S = 10.0
 WEATHER_DESC_MAP: dict[str, str] = {
     "Sunny": "晴",

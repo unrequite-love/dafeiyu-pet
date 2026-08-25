@@ -2,6 +2,28 @@
 
 本项目遵守 [Semantic Versioning](https://semver.org/)。
 
+## [1.1.1] - 2026-08-25
+
+### 变更
+
+- 默认模型 `deepseek-v4-pro` → `deepseek-v4-flash`（响应结构与 V4 Pro 一致，解析逻辑无需调整：普通模式也可能返回 `reasoning_content`，已按既定逻辑跳过）
+
+## [1.1.0] - 2026-08-25
+
+### 变更
+
+- DeepSeek 接口迁移至 V4 Pro 规范：
+  - 端点 `https://api.deepseek.com/v1/chat/completions` → `https://api.deepseek.com/chat/completions`（去掉 `/v1` 前缀）
+  - 模型 `deepseek-chat` → `deepseek-v4-pro`
+  - 请求体显式携带 `stream: false`
+
+### 新增
+
+- 「深度思考」开关（右键菜单，存于 `config.json` 的 `ds_thinking`，默认关闭）：
+  - 开启时发送 `thinking: {"type": "enabled"}` + `reasoning_effort: "high"`，不设 `max_tokens`（避免推理 token 耗尽 100 上限导致空回复）、不发送 `temperature`，超时放宽至 60 秒
+  - 关闭时 `thinking: disabled`，保持原短平快参数（`max_tokens=100` + `temperature=0.9`）
+- 响应解析跳过 `reasoning_content`（思考过程不上屏），`content` 为空时明确报错
+
 ## [1.0.0] - 2026-08-25
 
 结构化重构版本，功能与原版保持一致，另补全进食动画。

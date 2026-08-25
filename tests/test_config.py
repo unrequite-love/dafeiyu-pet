@@ -8,7 +8,7 @@ def test_defaults_when_missing(tmp_path):
     cfg = PetConfig(tmp_path / "config.json")
     assert cfg.data == DEFAULTS
     assert cfg["mode"] == "wander"
-    assert cfg.get("city") == "汕头"
+    assert cfg.get("city") == DEFAULTS["city"]
 
 
 def test_old_fields_backwards_compatible(tmp_path):

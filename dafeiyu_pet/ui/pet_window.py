@@ -177,11 +177,12 @@ class PetWindow(QWidget):
             return
         # busy 的检查与置位都发生在主线程（UI 事件），无竞态
         self.ds_busy = True
+        thinking = bool(self.cfg.get("ds_thinking", False))
         messages = build_messages(DS_SYSTEM_PROMPT, self.history.entries(), user_msg)
 
         def worker() -> None:
             try:
-                reply = DeepSeekClient(key).chat(messages)
+                reply = DeepSeekClient(key, thinking=thinking).chat(messages)
                 self.history.append_turn(user_msg, reply)
                 self._queue_say(reply)
             except DeepSeekTimeout:
@@ -537,6 +538,10 @@ class PetWindow(QWidget):
             a.setChecked(abs(self.cur_h - BASE_SPRITE_H * mult) < 2)
             a.triggered.connect(lambda _, v=mult: self.set_size(v))
         m.addAction("设置 Key", self._set_key_dialog)
+        tk = m.addAction("深度思考")
+        tk.setCheckable(True)
+        tk.setChecked(bool(self.cfg.get("ds_thinking", False)))
+        tk.triggered.connect(self._toggle_thinking)
         m.addAction("设置城市", self._set_city_dialog)
         m.addAction("查看天气", self._get_weather)
         m.addSeparator()
@@ -571,6 +576,10 @@ class PetWindow(QWidget):
             self.say("Key 设置成功！")
         elif ok and not key.strip():
             self.say("Key 不能为空")
+
+    def _toggle_thinking(self, on: bool) -> None:
+        self.cfg.set("ds_thinking", bool(on))
+        self.say("开启深度思考，回话要想久一点啦～" if on else "不做脑内小剧场了")
 
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Context:

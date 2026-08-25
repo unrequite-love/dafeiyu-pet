@@ -1,4 +1,4 @@
-"""DeepSeek 对话服务：消息构建/截断为纯函数，网络调用封装为客户端。"""
+"""DeepSeek 对话服务：V4 Pro 接口（无 /v1 前缀，支持 thinking 深度思考）。"""
 from __future__ import annotations
 
 import logging
@@ -11,9 +11,11 @@ from dafeiyu_pet.constants import (
     DS_BASE_URL,
     DS_MAX_TOKENS,
     DS_MODEL,
+    DS_REASONING_EFFORT,
     DS_REPLY_MAX_LEN,
     DS_SYSTEM_PROMPT,
     DS_TEMPERATURE,
+    DS_THINKING_TIMEOUT_S,
     DS_TIMEOUT_S,
     MAX_HISTORY,
 )
@@ -31,6 +33,11 @@ class DeepSeekTimeout(DeepSeekError):
 
 class DeepSeekConnectionError(DeepSeekError):
     """连接失败。"""
+
+
+def chat_url(base_url: str = DS_BASE_URL) -> str:
+    """对话接口完整 URL（注意：新版接口无 /v1 前缀）。"""
+    return f"{base_url.rstrip('/')}/chat/completions"
 
 
 def build_messages(
@@ -75,6 +82,44 @@ class ChatHistory:
         return len(self._entries)
 
 
+def build_payload(
+    messages: list[dict[str, str]],
+    model: str = DS_MODEL,
+    thinking: bool = False,
+    reasoning_effort: str = DS_REASONING_EFFORT,
+    max_tokens: int = DS_MAX_TOKENS,
+    temperature: float = DS_TEMPERATURE,
+) -> dict[str, Any]:
+    """构造请求体（对齐 V4 Pro 接口）。
+
+    - stream 恒为 False（气泡逐句展示，无需流式）；
+    - 深度思考模式：thinking=enabled + reasoning_effort；不设 max_tokens
+      （给推理 token 留余量，否则 100 上限会被思考耗尽导致空回复），不发 temperature；
+    - 普通模式：thinking=disabled，限输出长度并带温度，短平快。
+    """
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "thinking": {"type": "enabled" if thinking else "disabled"},
+    }
+    if thinking:
+        payload["reasoning_effort"] = reasoning_effort
+    else:
+        payload["max_tokens"] = max_tokens
+        payload["temperature"] = temperature
+    return payload
+
+
+def extract_reply(data: dict) -> str:
+    """取最终回复（reasoning_content 是思考过程，不展示）。"""
+    msg = data["choices"][0]["message"]
+    reply = (msg.get("content") or "").strip()
+    if not reply:
+        raise DeepSeekError("回复为空")
+    return reply
+
+
 class DeepSeekClient:
     """DeepSeek 客户端：同步调用，内部锁保证线程安全。"""
 
@@ -83,11 +128,15 @@ class DeepSeekClient:
         api_key: str,
         base_url: str = DS_BASE_URL,
         model: str = DS_MODEL,
-        timeout: float = DS_TIMEOUT_S,
+        thinking: bool = False,
+        timeout: float | None = None,
     ) -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.thinking = thinking
+        if timeout is None:
+            timeout = DS_THINKING_TIMEOUT_S if thinking else DS_TIMEOUT_S
         self.timeout = timeout
         self._lock = threading.Lock()
 
@@ -96,12 +145,6 @@ class DeepSeekClient:
 
         失败抛 DeepSeekError 及其子类，网络异常会被翻译为对应子类。
         """
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": DS_MAX_TOKENS,
-            "temperature": DS_TEMPERATURE,
-        }
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -109,8 +152,8 @@ class DeepSeekClient:
         try:
             with self._lock:
                 resp = requests.post(
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
+                    chat_url(self.base_url),
+                    json=build_payload(messages, model=self.model, thinking=self.thinking),
                     headers=headers,
                     timeout=self.timeout,
                 )
@@ -126,5 +169,8 @@ class DeepSeekClient:
                 msg = f"HTTP {resp.status_code}"
             logger.warning("DeepSeek API 错误: %s %s", resp.status_code, msg)
             raise DeepSeekError(msg)
-        reply = resp.json()["choices"][0]["message"]["content"]
-        return truncate_reply(reply)
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise DeepSeekError(f"HTTP {resp.status_code} 响应非 JSON") from e
+        return truncate_reply(extract_reply(data))
