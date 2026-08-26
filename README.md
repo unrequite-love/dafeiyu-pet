@@ -136,6 +136,7 @@ dafeiyu_pet/
 │   └── food_panel.py       # 双击弹出的喂食面板
 └── main.py                 # 应用入口
 tests/                      # pytest 单元测试（纯逻辑 + GUI 回归）
+doc/                        # 架构文档 / 设计思路 / 功能清单（复用模板）
 run.py                      # 根级入口（PyInstaller / python run.py）
 start_pet.bat               # 启动脚本（ASCII，自动选 venv / 系统 Python）
 build.bat                   # 一键打包 exe
