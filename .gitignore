@@ -1,5 +1,6 @@
 # 运行时生成（含 API Key，严禁入库）
 config.json
+chat_history.json
 logs/
 
 # 虚拟环境

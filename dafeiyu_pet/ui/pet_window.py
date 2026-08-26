@@ -31,6 +31,8 @@ from dafeiyu_pet.constants import (
     CLICK_INTERVAL_MS,
     DEFAULT_CITY,
     DRAG_LINES,
+    DS_STREAM_BUBBLE_SECONDS,
+    DS_STREAM_STEP_CHARS,
     DS_SYSTEM_PROMPT,
     FOOD_LINES,
     INNER_LINES,
@@ -45,7 +47,7 @@ from dafeiyu_pet.constants import (
     TICK_MS,
 )
 from dafeiyu_pet.logic import bubble_duration, choose_direction, sprite_key
-from dafeiyu_pet.paths import APP_DIR, CONFIG_PATH, PYTHONW, SPRITE_DIR
+from dafeiyu_pet.paths import APP_DIR, CONFIG_PATH, HISTORY_PATH, PYTHONW, SPRITE_DIR
 from dafeiyu_pet.services.deepseek import (
     ChatHistory,
     DeepSeekClient,
@@ -53,10 +55,12 @@ from dafeiyu_pet.services.deepseek import (
     DeepSeekError,
     DeepSeekTimeout,
     build_messages,
+    truncate_reply,
 )
 from dafeiyu_pet.services.monitor import clamp_interval, evaluate, read_gpu_temp, read_stats
 from dafeiyu_pet.services.weather import fetch_weather
 from dafeiyu_pet.ui.chat_dialog import ChatDialog
+from dafeiyu_pet.ui.chat_log_dialog import ChatLogDialog
 from dafeiyu_pet.ui.food_panel import FoodPanel
 from dafeiyu_pet.ui.function_panel import FunctionPanel
 
@@ -118,6 +122,8 @@ class PetWindow(QWidget):
         self.bubble_text = ""
         self.bubble_until = 0.0
         self.bubble_inner = False
+        self._wrap_key: tuple | None = None  # 气泡换行缓存键
+        self._wrap_lines: list[str] = []  # 气泡换行缓存结果
         self.last_speak_tick = 0
         self.last_system_check = 0
         self.t = 0
@@ -129,7 +135,7 @@ class PetWindow(QWidget):
 
         # ---- AI 相关 ----
         self.ds_busy = False
-        self.history = ChatHistory()
+        self.history = ChatHistory(path=str(HISTORY_PATH))  # 持久化：重启恢复上下文
         self._ds_client: DeepSeekClient | None = None  # 缓存客户端（Session 连接复用）
         self._ds_client_sig: tuple | None = None
         self._say_queue: list[tuple[str, float | None]] = []  # 后台线程 → 主线程的气泡消息队列
@@ -146,6 +152,7 @@ class PetWindow(QWidget):
         self._click_timer.timeout.connect(self._on_single_click)
 
         self.chat_dialog = ChatDialog(self)
+        self.chat_log = ChatLogDialog(self)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -197,7 +204,23 @@ class PetWindow(QWidget):
 
         def worker() -> None:
             try:
-                reply = self._get_ds_client(thinking).chat(messages)
+                # 流式：逐段接收，增量刷新气泡（阅读不等待整句生成完）
+                client = self._get_ds_client(thinking)
+                parts: list[str] = []
+                posted = 0
+                for delta in client.chat_stream(messages):
+                    parts.append(delta)
+                    joined = "".join(parts)
+                    if len(joined) - posted >= DS_STREAM_STEP_CHARS:
+                        posted = len(joined)
+                        self._post(
+                            lambda t=joined: self.say(
+                                t, duration=DS_STREAM_BUBBLE_SECONDS, force=True
+                            )
+                        )
+                reply = truncate_reply("".join(parts))
+                if not reply:
+                    raise DeepSeekError("回复为空")
                 self.history.append_turn(user_msg, reply)
                 self._queue_say(reply)
             except DeepSeekTimeout:
@@ -238,15 +261,21 @@ class PetWindow(QWidget):
                 bg, fg = QColor(255, 255, 255, 235), QColor(60, 60, 80)
             fm = QFontMetrics(bfont)
             max_w = min(240, self.width() - 16)
-            lines = []
-            cur = ""
-            for ch in self.bubble_text:
-                if fm.horizontalAdvance(cur + ch) > max_w - 20:
-                    lines.append(cur)
-                    cur = ch
-                else:
-                    cur += ch
-            lines.append(cur)
+            # 换行结果缓存：气泡驻留期间每个 20ms tick 都会重绘，避免重复逐字测量
+            wrap_key = (self.bubble_text, self.bubble_inner, max_w)
+            if wrap_key != self._wrap_key:
+                lines = []
+                cur = ""
+                for ch in self.bubble_text:
+                    if fm.horizontalAdvance(cur + ch) > max_w - 20:
+                        lines.append(cur)
+                        cur = ch
+                    else:
+                        cur += ch
+                lines.append(cur)
+                self._wrap_key = wrap_key
+                self._wrap_lines = lines
+            lines = self._wrap_lines
             bw = max(fm.horizontalAdvance(ln) for ln in lines) + 20
             bh = len(lines) * fm.height() + 14
             bx = (self.width() - bw) / 2
@@ -453,9 +482,13 @@ class PetWindow(QWidget):
         self._main_queue.append(fn)
 
     def say(
-        self, text: str, inner: bool = False, duration: float | None = None
+        self,
+        text: str,
+        inner: bool = False,
+        duration: float | None = None,
+        force: bool = False,
     ) -> None:
-        if text == self.last_line and not text.startswith("天气"):
+        if not force and text == self.last_line and not text.startswith("天气"):
             return
         self.last_line = text
         self.bubble_inner = inner
@@ -551,6 +584,11 @@ class PetWindow(QWidget):
             self.y() + BUBBLE_H,
         )
 
+    def _show_chat_log(self) -> None:
+        """回看与 DeepSeek 的完整对话历史（可清空）。"""
+        self.chat_log.refresh(self.history.entries())
+        self.chat_log.popup_at(self.x() + self.width() / 2, self.y())
+
     def _set_city_dialog(self) -> None:
         city, ok = QInputDialog.getText(
             self,
@@ -593,6 +631,7 @@ class PetWindow(QWidget):
             a.triggered.connect(lambda _, v=mult: self.set_size(v))
         m.addAction("设置 Key", self._set_key_dialog)
         m.addAction("测试DS连接", self._test_ds_connection)
+        m.addAction("聊天记录", self._show_chat_log)
         pxy = m.addAction("使用系统代理")
         pxy.setCheckable(True)
         pxy.setChecked(bool(self.cfg.get("use_proxy", True)))

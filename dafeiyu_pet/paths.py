@@ -22,4 +22,5 @@ else:
 
 SPRITE_DIR = BUNDLE_DIR / "sprites"
 CONFIG_PATH = APP_DIR / "config.json"
+HISTORY_PATH = APP_DIR / "chat_history.json"
 LOG_DIR = APP_DIR / "logs"

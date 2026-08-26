@@ -33,6 +33,11 @@ DS_MAX_TOKENS = 100  # 普通模式输出上限
 DS_TEMPERATURE = 0.9  # 采样温度（仅普通模式发送）
 DS_REASONING_EFFORT = "high"  # 深度思考推理力度
 DS_REPLY_HARD_CAP = 120  # 回复极端上限（仅防模型失控刷屏，正常回复完整显示）
+DS_RETRIES = 3  # 429/5xx 最大尝试次数（含首次）
+DS_RETRY_BACKOFF_S = 0.5  # 重试基础退避(s)，指数递增：0.5/1/2
+DS_RETRIABLE_STATUSES = frozenset({429, 500, 502, 503, 504})  # 可重试的 HTTP 状态码
+DS_STREAM_STEP_CHARS = 4  # 流式模式：每累计 N 字符刷新一次气泡
+DS_STREAM_BUBBLE_SECONDS = 3.0  # 流式增量气泡的刷新驻留时长(s)，结束前不断续期
 MAX_HISTORY = 40  # 对话历史最多保留条数
 
 # ---- 天气 ----

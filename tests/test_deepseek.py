@@ -1,4 +1,6 @@
 """DeepSeek 消息构建/历史/截断/请求体纯逻辑测试（不发真实请求）。"""
+import json
+
 import pytest
 
 from dafeiyu_pet.constants import DS_MODEL, DS_SYSTEM_PROMPT, MAX_HISTORY
@@ -111,3 +113,52 @@ def test_client_timeout_defaults():
     assert DeepSeekClient("k").timeout == 10.0
     assert DeepSeekClient("k", thinking=True).timeout == 60.0
     assert DeepSeekClient("k", timeout=5.0).timeout == 5.0
+
+
+# ---- 历史持久化（#5） ----
+
+
+def test_history_persistence_roundtrip(tmp_path):
+    path = tmp_path / "chat_history.json"
+    h = ChatHistory(path=str(path))
+    h.append_turn("你好", "你好呀")
+    h.append_turn("吃饭没", "吃了小鱼干")
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert len(on_disk) == 4
+
+    restored = ChatHistory(path=str(path))  # 模拟重启加载
+    assert restored.entries() == h.entries()
+    assert restored.entries()[0] == {"role": "user", "content": "你好"}
+
+
+def test_history_persistence_corrupt_file(tmp_path):
+    path = tmp_path / "chat_history.json"
+    path.write_text("{broken", encoding="utf-8")
+    h = ChatHistory(path=str(path))
+    assert len(h) == 0  # 损坏文件 → 从空开始，不崩溃
+
+
+def test_history_persistence_bad_entries_filtered(tmp_path):
+    path = tmp_path / "chat_history.json"
+    path.write_text(
+        json.dumps([{"role": "user", "content": "ok"}, {"bad": 1}, "junk", None]),
+        encoding="utf-8",
+    )
+    h = ChatHistory(path=str(path))
+    assert h.entries() == [{"role": "user", "content": "ok"}]
+
+
+def test_history_clear_persists(tmp_path):
+    path = tmp_path / "chat_history.json"
+    h = ChatHistory(path=str(path))
+    h.append_turn("a", "b")
+    h.clear()
+    assert len(h) == 0
+    assert json.loads(path.read_text(encoding="utf-8")) == []
+    assert ChatHistory(path=str(path)).entries() == []
+
+
+def test_history_no_path_no_io():
+    h = ChatHistory()
+    h.append_turn("x", "y")
+    assert len(h) == 2  # 未传 path 不做任何文件读写，不报错

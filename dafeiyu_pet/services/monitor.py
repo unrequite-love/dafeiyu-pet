@@ -53,13 +53,27 @@ def read_stats() -> tuple[float, float]:
     return psutil.cpu_percent(), psutil.virtual_memory().percent
 
 
-def read_gpu_temp() -> int | None:
-    """读取 0 号 NVIDIA 显卡温度(°C)，不可用时返回 None。"""
+def read_gpu_temps() -> list[int]:
+    """读取所有 NVIDIA 显卡温度(°C)，不可用/失败返回空列表。"""
     if not GPU_AVAILABLE:
-        return None
+        return []
+    temps: list[int] = []
     try:
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        return pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+        count = pynvml.nvmlDeviceGetCount()
+        for i in range(count):
+            try:
+                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                temps.append(
+                    int(pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU))
+                )
+            except Exception as e:  # 单卡失败不影响其余卡
+                logger.debug("GPU %d 温度读取失败: %s", i, e)
     except Exception as e:
-        logger.debug("GPU 温度读取失败: %s", e)
-        return None
+        logger.debug("GPU 枚举失败: %s", e)
+    return temps
+
+
+def read_gpu_temp() -> int | None:
+    """读取最高显卡温度(°C)（多卡取最大），不可用时返回 None。"""
+    temps = read_gpu_temps()
+    return max(temps) if temps else None
