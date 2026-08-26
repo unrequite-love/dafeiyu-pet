@@ -2,6 +2,13 @@
 
 本项目遵守 [Semantic Versioning](https://semver.org/)。
 
+## [1.5.4] - 2026-08-26
+
+### 移除（破坏性）
+
+- 删除 `preprocess.py` / `preprocess2.py` 薄封装脚本：`sprite_tools.py` 一条命令即可覆盖原两步流程（见 README「更换形象」）。有旧流程脚本习惯的用户请改用：
+  `python sprite_tools.py --src raw_sprites --out sprites --names 正面,侧面,背面 --height 340 --sizes 187,238,306 --icon 64`
+
 ## [1.5.3] - 2026-08-26
 
 ### 新增
