@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dafeiyu-pet"
-version = "1.5.0"
+version = "1.5.1"
 description = "大肥鱼桌宠 —— DeepSeek 二创鲸鱼娘透明桌面宠物（Windows）"
 readme = "README.md"
 license = { text = "MIT" }

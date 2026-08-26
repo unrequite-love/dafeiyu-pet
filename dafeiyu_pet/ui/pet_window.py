@@ -58,7 +58,7 @@ from dafeiyu_pet.services.deepseek import (
     truncate_reply,
 )
 from dafeiyu_pet.services.monitor import clamp_interval, evaluate, read_gpu_temp, read_stats
-from dafeiyu_pet.services.weather import fetch_weather
+from dafeiyu_pet.services.weather import fetch_weather, format_weather
 from dafeiyu_pet.ui.chat_dialog import ChatDialog
 from dafeiyu_pet.ui.chat_log_dialog import ChatLogDialog
 from dafeiyu_pet.ui.food_panel import FoodPanel
@@ -607,7 +607,7 @@ class PetWindow(QWidget):
         def worker() -> None:
             try:
                 temp, desc = fetch_weather(city, use_proxy=bool(self.cfg.get("use_proxy", True)))
-                self._queue_say(f"{city}今天{temp}°，天气{desc}")
+                self._queue_say(format_weather(city, temp, desc))
             except Exception as e:  # noqa: BLE001 —— 后台线程兜底
                 logger.warning("天气获取失败: %s", e)
                 self._queue_say("天气获取失败")
