@@ -127,3 +127,36 @@
 - **P2 智能**：AI 客户端（Session 复用/异常分类/重试/流式）+ Key 管理（密文/即时验证/诊断）+ 历史持久化
 - **P3 工具**：天气（码表回退链）+ 系统监控（默认关、间隔可调）
 - **P4 分发**：PyInstaller spec + build 脚本 + 白名单分享包 + 素材预处理脚本 + 测试分层
+
+## 10. 规划中功能（Roadmap，v1.5.2 尚未实现）
+
+> 以下为已确认的后续需求，设计定稿但代码未开发；配置键为规划值，当前版本 config.json 中不存在。
+
+### 10.1 多服务商 AI 接入（OpenAI / Anthropic 兼容）
+
+| 规划项 | 说明 |
+|--------|------|
+| 协议支持 | OpenAI 兼容协议（DeepSeek-v4-pro、GLM-5.3、Kimi-K3、MiniMax-M3 等）+ Anthropic 原生 Messages 协议 |
+| 服务商预设 | 内置预设一键切换（自动填 base_url / 默认模型 / 协议），另留「自定义」入口 |
+| 用户可配置 | 右键「设置 ▸ AI 服务」对话框：服务商预设、接口地址、模型名、协议、密钥 |
+| 规划配置键 | `ai_provider`（预设名）、`ai_base_url`、`ai_model`、`ai_protocol`（openai/anthropic）、`ai_thinking` |
+| 兼容迁移 | 旧键 `ds_api_key` / `ds_thinking` 启动时自动迁移为 `ai_*` 等价配置 |
+| 架构影响 | `services/deepseek.py` 演化为 `services/ai.py`：请求体构建 / 响应解析 / 流式解析按协议适配，客户端、重试、历史层不变 |
+
+### 10.2 窗口半透明设置
+
+| 规划项 | 说明 |
+|--------|------|
+| 透明度档位 | 右键「透明度 ▸」：100% / 80% / 60% / 40% 四档（默认 100%） |
+| 规划配置键 | `window_opacity: 1.0`，即时生效并落盘记忆 |
+| 目的 | 工作时降低桌宠对桌面内容的遮挡；档位化而非滑杆，与「大小」菜单交互一致 |
+| 实现注意 | 优先仅对精灵本体降 alpha（paintEvent 内 `setOpacity`），保持气泡文字完全不透明可读；`setWindowOpacity` 会连带气泡一起变淡，仅作整窗降档的备选 |
+
+### 10.3 密钥加密存储
+
+| 规划项 | 说明 |
+|--------|------|
+| 加密方案 | Windows DPAPI（`CryptProtectData`，绑定当前用户），密文 base64 存 config.json，带 `enc:` 前缀标识 |
+| 明文禁令 | config.json 中不再出现任何明文 API Key；手改配置写入明文时启动自动加密重写（迁移） |
+| 边界说明 | DPAPI 防的是「配置文件被拷走/分享泄露」，同用户下的进程仍可解密——桌面应用合理的威胁模型，需在文档如实声明 |
+| 架构影响 | 新增 `services/crypto.py`（protect/unprotect 纯封装 + 可测 fake），读写密钥统一走该模块 |

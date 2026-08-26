@@ -210,3 +210,39 @@ tests/
 - [ ] 无边框 Tool 弹窗必须 activateWindow + setFocus
 - [ ] 纯逻辑全部可单测；GUI 只留焦点/交互回归
 - [ ] 分发包白名单制，本地数据永不出机器
+
+## 11. 规划中的架构演化（v1.5.2 尚未实现）
+
+> 三项已定稿的后续需求对结构的影响，开发前先读此节避免返工。
+
+### 11.1 services/ai.py —— 协议适配型 AI 客户端（替换 deepseek.py）
+
+```
+services/ai.py
+├── 协议常量      PROTOCOL_OPENAI / PROTOCOL_ANTHROPIC
+├── 纯函数×2套    build_payload_{openai,anthropic}
+│                 extract_reply_{openai,anthropic}
+│                 stream_text_{openai,anthropic}
+│                 stream_error_message(chunk, protocol)
+├── ChatHistory   （原样迁入，与协议无关）
+└── AIClient      客户端骨架不变，内部按 protocol 分发到上述纯函数
+```
+
+- 配置新增：`ai_provider / ai_base_url / ai_model / ai_protocol / ai_thinking`，
+  由 constants 的 `AI_PRESETS` 提供服务商预设（含自定义档）
+- 启动迁移：`ds_api_key`→`ai_api_key_enc`、`ds_thinking`→`ai_thinking`
+- UI 新增 `ui/ai_settings_dialog.py`：预设下拉 + 地址/模型/协议/密钥表单
+
+### 11.2 services/crypto.py —— DPAPI 密钥加密
+
+- `protect(plaintext) -> "enc:<base64>"` / `unprotect(stored) -> str`
+- 纯 ctypes 封装 `CryptProtectData/CryptUnprotectData`（无三方依赖）
+- 仅 Windows 可用；测试注入 fake（加解密恒等函数）保持跨环境可跑
+- 所有读写密钥的代码路径统一经过它，config.py 不感知细节
+
+### 11.3 透明度 —— paintEvent 内分层 alpha
+
+- 精灵绘制路径包 `painter.setOpacity(cfg.window_opacity)`，气泡层保持 1.0
+- `window_opacity: 1.0` 入 config，四档枚举（1.0/0.8/0.6/0.4）
+- 菜单「透明度 ▸」四选一，与「大小」同模式；不采用 setWindowOpacity
+  （会连带气泡变淡，违背气泡可读性底线）
