@@ -108,12 +108,18 @@ pyinstaller --noconfirm dafeiyu_pet.spec   # 需先 pip install pyinstaller
 
 ## 更换形象
 
-把新的三视图（白底）放到 `raw_sprites/` 目录（正面.png / 侧面.png / 背面.png），然后：
+把新的三视图（白底）放到 `raw_sprites/` 目录（正面.png / 侧面.png / 背面.png），然后二选一：
 
 ```bash
+# 方式一：独立工具箱一条命令（推荐，抠图+去污+多尺寸+图标全流程）
+python sprite_tools.py --src raw_sprites --out sprites --height 340 --sizes 187,238,306 --icon 64
+
+# 方式二：分两步走（与原流程等价）
 python preprocess.py --src raw_sprites --out sprites    # 白底抠图 + 统一高度
 python preprocess2.py --src raw_sprites --out sprites   # 边缘去污 + 预乘 alpha 生成各尺寸
 ```
+
+> `sprite_tools.py` 是**单文件零项目依赖**的工具箱（仅依赖 Pillow），可直接拷贝到其他项目复用；`preprocess*.py` 是基于它的本项目薄封装。
 
 ## 项目结构
 
@@ -141,7 +147,8 @@ run.py                      # 根级入口（PyInstaller / python run.py）
 start_pet.bat               # 启动脚本（ASCII，自动选 venv / 系统 Python）
 build.bat                   # 一键打包 exe
 dafeiyu_pet.spec            # PyInstaller 打包配置
-preprocess.py / preprocess2.py  # 素材预处理（argparse 参数化）
+preprocess.py / preprocess2.py  # 素材预处理薄封装（核心算法在 sprite_tools）
+sprite_tools.py             # 独立精灵图工具箱（单文件可拷贝复用：抠图/去污/预乘缩放/CLI）
 make_zip.py                 # 源码分享包（不含本地数据）
 ```
 

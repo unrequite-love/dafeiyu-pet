@@ -32,6 +32,7 @@ FILES = [
     "dafeiyu_pet.spec",
     "preprocess.py",
     "preprocess2.py",
+    "sprite_tools.py",
     "make_zip.py",
     "pyproject.toml",
     "requirements.txt",

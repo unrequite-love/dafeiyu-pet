@@ -95,7 +95,7 @@
 | 一键打包 | build.bat 自动装 dev 依赖 + PyInstaller | `build.bat` | v1.5.0 |
 | 打包配置 | dafeiyu_pet.spec：单文件 windowed、collect_all 收集三方数据文件、icon | `pyinstaller --noconfirm dafeiyu_pet.spec` | v1.0 |
 | 源码分享包 | make_zip.py 白名单制打包，天然排除 config/历史/日志等本地数据 | `python make_zip.py` | v1.0 |
-| 素材预处理 | preprocess.py（白底抠图/统一高度）+ preprocess2.py（边缘去污/预乘 alpha 多尺寸），argparse 参数化 | `python preprocess.py --help` | v1.0 |
+| 素材预处理 | **sprite_tools.py 独立工具箱**（单文件零项目依赖，仅 Pillow，可拷贝到任意项目复用）：白底泛洪抠图 / 边缘去污 / 预乘 alpha 缩放 / 批量目录流水线，库 + CLI 双形态；preprocess.py / preprocess2.py 为本项目薄封装 | `python sprite_tools.py --help` | v1.5.3 |
 | 多形态路径 | 源码 / pip 安装 / PyInstaller frozen 三形态自动适配数据与资源目录 | 自动 | v1.0 |
 | 启动脚本 | start_pet.bat：纯 ASCII + CRLF，自动选 venv/系统 Python，缺 Python 有提示 | 双击 | v1.0 |
 

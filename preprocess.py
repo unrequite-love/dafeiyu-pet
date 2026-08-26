@@ -1,4 +1,7 @@
-"""三视图抠图+规格化（第一步）：白底 → 透明 PNG，统一高度，裁掉空白边。
+"""三视图抠图+规格化（第一步）：白底 → 透明 PNG，统一高度。
+
+核心算法在 sprite_tools.py（独立工具箱，可单独拷贝复用），本脚本仅是
+面向本项目三视图的薄封装。
 
 用法：
     python preprocess.py --src 原图目录 --out sprites --height 340
@@ -7,50 +10,18 @@
 from __future__ import annotations
 
 import argparse
+import os
 
-from PIL import Image, ImageDraw
+from PIL import Image
+
+from sprite_tools import cutout_white, resize_to_height
 
 NAMES = ["正面", "侧面", "背面"]
 
 
 def cutout(path: str, target_h: int) -> Image.Image:
-    im = Image.open(path).convert("RGBA")
-    w, h = im.size
-    # 1) 从四角做连通域泛洪，把背景整片变透明（人物内部的白不受影响）
-    for sx, sy in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]:
-        ImageDraw.floodfill(im, (sx, sy), (0, 0, 0, 0), thresh=30)
-    # 2) 去白边：贴着透明区的亮像素也变透明（消除抗锯齿白晕）
-    for _ in range(3):
-        px = im.load()
-        changed = False
-        for y in range(h):
-            for x in range(w):
-                r, g, b, a = px[x, y]
-                if a == 0:
-                    continue
-                if r > 215 and g > 215 and b > 215:
-                    # 检查邻域是否有透明像素
-                    neighbors = (
-                        (1, 0), (-1, 0), (0, 1), (0, -1),
-                        (1, 1), (-1, -1), (1, -1), (-1, 1),
-                    )
-                    for dx, dy in neighbors:
-                        nx, ny = x + dx, y + dy
-                        if 0 <= nx < w and 0 <= ny < h and px[nx, ny][3] == 0:
-                            px[x, y] = (0, 0, 0, 0)
-                            changed = True
-                            break
-        if not changed:
-            break
-    # 3) 裁掉透明边
-    bbox = im.getbbox()
-    if bbox is None:
-        raise RuntimeError(f"{path}: 抠图后为空！")
-    im = im.crop(bbox)
-    # 4) 统一高度
-    w2, h2 = im.size
-    scale = target_h / h2
-    return im.resize((max(1, round(w2 * scale)), target_h), Image.LANCZOS)
+    """白底抠图 + 裁边 + 普通缩放到目标高度（第一步不做去污，见 preprocess2.py）。"""
+    return resize_to_height(cutout_white(Image.open(path)), target_h)
 
 
 def main() -> None:
@@ -59,15 +30,17 @@ def main() -> None:
     parser.add_argument("--out", default="sprites", help="输出目录")
     parser.add_argument("--height", type=int, default=340, help="目标高度(px)")
     args = parser.parse_args()
+    os.makedirs(args.out, exist_ok=True)
 
     for name in NAMES:
-        im = cutout(f"{args.src}/{name}.png", args.height)
-        im.save(f"{args.out}/{name}.png")
-        print(f"{name}: {im.size} -> {args.out}/{name}.png")
+        im = cutout(os.path.join(args.src, f"{name}.png"), args.height)
+        out_path = os.path.join(args.out, f"{name}.png")
+        im.save(out_path)
+        print(f"{name}: {im.size} -> {out_path}")
 
     # 托盘小图标
-    icon = cutout(f"{args.src}/正面.png", args.height).resize((64, 64), Image.LANCZOS)
-    icon.save(f"{args.out}/icon.png")
+    icon = cutout(os.path.join(args.src, "正面.png"), args.height).resize((64, 64), Image.LANCZOS)
+    icon.save(os.path.join(args.out, "icon.png"))
     print("icon: 64x64")
 
 
