@@ -1,7 +1,21 @@
-"""朝向选择与精灵映射逻辑测试。"""
+"""朝向选择、精灵映射、气泡时长等纯逻辑测试。"""
 import pytest
 
-from dafeiyu_pet.logic import choose_direction, sprite_key
+from dafeiyu_pet.constants import BUBBLE_MAX_SECONDS, BUBBLE_SECONDS
+from dafeiyu_pet.logic import bubble_duration, choose_direction, sprite_key
+
+
+def test_bubble_duration_scales_with_length():
+    assert bubble_duration("") == pytest.approx(BUBBLE_SECONDS)  # 空文本=基础时长
+    short = bubble_duration("你好呀")
+    longer = bubble_duration("这是一条比较长的回复，需要更多阅读时间哦～")
+    assert BUBBLE_SECONDS < short < longer
+    # 每字符 0.12s
+    assert bubble_duration("x" * 10) == pytest.approx(BUBBLE_SECONDS + 1.2)
+
+
+def test_bubble_duration_capped():
+    assert bubble_duration("x" * 200) == pytest.approx(BUBBLE_MAX_SECONDS)
 
 
 @pytest.mark.parametrize(

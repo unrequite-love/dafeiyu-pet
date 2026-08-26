@@ -7,7 +7,10 @@ BUBBLE_H = 56  # 气泡区高度(px)
 MARGIN = 4
 TICK_MS = 20  # 主循环间隔(ms)
 SPEED = 380.0  # 行走速度(px/s)
-BUBBLE_SECONDS = 2.8  # 气泡显示时长(s)
+BUBBLE_SECONDS = 2.8  # 气泡基础显示时长(s)
+BUBBLE_SECONDS_PER_CHAR = 0.12  # 每字符追加的阅读时间(s)
+BUBBLE_MAX_SECONDS = 12.0  # 动态时长上限(s)
+ERROR_BUBBLE_SECONDS = 8.0  # 错误类气泡显示时长(s)，太短用户看不到
 CLICK_INTERVAL_MS = 280  # 单击/双击判定间隔(ms)
 SPEAK_COOLDOWN_TICKS = 1500  # 日常台词冷却(tick)
 SIZE_LEVELS: dict[str, float] = {"小": 0.55, "中": 0.7, "大": 0.9}
@@ -16,7 +19,9 @@ SIZE_LEVELS: dict[str, float] = {"小": 0.55, "中": 0.7, "大": 0.9}
 CPU_WARN_PERCENT = 90
 RAM_WARN_PERCENT = 95
 GPU_WARN_TEMP_C = 80
-MONITOR_INTERVAL_MS = 10_000
+MONITOR_INTERVAL_S = 10.0  # 默认检测间隔(s)
+MONITOR_MIN_INTERVAL_S = 5.0  # 间隔下限(s)，防止过于频繁打扰
+MONITOR_MAX_INTERVAL_S = 3600.0  # 间隔上限(s)
 
 # ---- DeepSeek 对话（V4 Pro 接口：无 /v1 前缀） ----
 DS_BASE_URL = "https://api.deepseek.com"
@@ -27,7 +32,7 @@ DS_THINKING_TIMEOUT_S = 60.0  # 深度思考模式超时(s)，推理耗时更长
 DS_MAX_TOKENS = 100  # 普通模式输出上限
 DS_TEMPERATURE = 0.9  # 采样温度（仅普通模式发送）
 DS_REASONING_EFFORT = "high"  # 深度思考推理力度
-DS_REPLY_MAX_LEN = 30  # 回复超过该长度则截断
+DS_REPLY_HARD_CAP = 120  # 回复极端上限（仅防模型失控刷屏，正常回复完整显示）
 MAX_HISTORY = 40  # 对话历史最多保留条数
 
 # ---- 天气 ----

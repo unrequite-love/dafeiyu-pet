@@ -12,7 +12,7 @@ from dafeiyu_pet.constants import (
     DS_MAX_TOKENS,
     DS_MODEL,
     DS_REASONING_EFFORT,
-    DS_REPLY_MAX_LEN,
+    DS_REPLY_HARD_CAP,
     DS_SYSTEM_PROMPT,
     DS_TEMPERATURE,
     DS_THINKING_TIMEOUT_S,
@@ -54,11 +54,14 @@ def build_messages(
     return messages
 
 
-def truncate_reply(reply: str, limit: int = DS_REPLY_MAX_LEN) -> str:
-    """回复超长时截断（末尾以省略号收尾），保证气泡不撑爆。"""
+def truncate_reply(reply: str, limit: int = DS_REPLY_HARD_CAP) -> str:
+    """仅当回复超过极端上限时截断（防模型失控刷屏）；正常回复完整返回。
+
+    气泡本身支持自动换行，按字数动态延长显示时间，无需为显示而截断内容。
+    """
     reply = reply.strip()
     if len(reply) > limit:
-        reply = reply[: limit - 2] + "…"
+        reply = reply[: limit - 1] + "…"
     return reply
 
 
@@ -121,7 +124,12 @@ def extract_reply(data: dict) -> str:
 
 
 class DeepSeekClient:
-    """DeepSeek 客户端：同步调用，内部锁保证线程安全。"""
+    """DeepSeek 客户端：同步调用，内部锁保证线程安全。
+
+    - 持有 requests.Session 复用 TCP/TLS 连接，省去每次握手延迟；
+    - use_proxy=False 时 session.trust_env=False，绕过系统/环境代理直连
+      （代理拦截 api.deepseek.com 导致超时时用）。
+    """
 
     def __init__(
         self,
@@ -130,6 +138,7 @@ class DeepSeekClient:
         model: str = DS_MODEL,
         thinking: bool = False,
         timeout: float | None = None,
+        use_proxy: bool = True,
     ) -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
@@ -139,6 +148,8 @@ class DeepSeekClient:
             timeout = DS_THINKING_TIMEOUT_S if thinking else DS_TIMEOUT_S
         self.timeout = timeout
         self._lock = threading.Lock()
+        self._session = requests.Session()
+        self._session.trust_env = use_proxy
 
     def chat(self, messages: list[dict[str, str]]) -> str:
         """调用对话接口，返回（已截断的）回复文本。
@@ -151,7 +162,7 @@ class DeepSeekClient:
         }
         try:
             with self._lock:
-                resp = requests.post(
+                resp = self._session.post(
                     chat_url(self.base_url),
                     json=build_payload(messages, model=self.model, thinking=self.thinking),
                     headers=headers,
@@ -167,7 +178,9 @@ class DeepSeekClient:
                 msg = resp.json().get("error", {}).get("message", str(resp.status_code))
             except ValueError:
                 msg = f"HTTP {resp.status_code}"
-            logger.warning("DeepSeek API 错误: %s %s", resp.status_code, msg)
+            logger.warning(
+                "DeepSeek API 错误: %s %s | 响应: %s", resp.status_code, msg, resp.text[:300]
+            )
             raise DeepSeekError(msg)
         try:
             data = resp.json()

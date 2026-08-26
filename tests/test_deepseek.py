@@ -4,6 +4,7 @@ import pytest
 from dafeiyu_pet.constants import DS_MODEL, DS_SYSTEM_PROMPT, MAX_HISTORY
 from dafeiyu_pet.services.deepseek import (
     ChatHistory,
+    DeepSeekClient,
     DeepSeekError,
     build_messages,
     build_payload,
@@ -34,9 +35,10 @@ def test_build_messages_caps_history():
 
 def test_truncate_reply():
     assert truncate_reply("  短回复  ") == "短回复"
-    assert truncate_reply("x" * 30) == "x" * 30          # 恰好不超
-    out = truncate_reply("x" * 31)
-    assert len(out) == 29  # 28 字符 + 省略号
+    assert truncate_reply("x" * 30) == "x" * 30   # 30 字不截断（正常回复完整显示）
+    assert truncate_reply("x" * 120) == "x" * 120  # 恰好达到上限不截断
+    out = truncate_reply("x" * 121)               # 仅极端上限（120）才截断
+    assert len(out) == 120
     assert out.endswith("…")
 
 
@@ -95,3 +97,17 @@ def test_extract_reply_empty_raises():
         extract_reply({"choices": [{"message": {"content": ""}}]})
     with pytest.raises(DeepSeekError):
         extract_reply({"choices": [{"message": {"content": None}}]})
+
+
+def test_client_session_reuse_and_proxy():
+    client = DeepSeekClient("k")
+    assert client._session.trust_env is True  # 默认走系统代理
+    direct = DeepSeekClient("k", use_proxy=False)
+    assert direct._session.trust_env is False  # 直连模式
+    assert client._session is not None
+
+
+def test_client_timeout_defaults():
+    assert DeepSeekClient("k").timeout == 10.0
+    assert DeepSeekClient("k", thinking=True).timeout == 60.0
+    assert DeepSeekClient("k", timeout=5.0).timeout == 5.0

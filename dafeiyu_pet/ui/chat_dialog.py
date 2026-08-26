@@ -112,6 +112,10 @@ class ChatDialog(QDialog):
         self.move(int(x - self.width() / 2), int(y - self.height() - 10))
         self.show()
         self.raise_()
+        # 关键：无边框 Tool 窗口 show() 不会成为系统活动窗口，
+        # 键盘输入不会进入输入框；必须显式请求激活 + 设焦点
+        self.activateWindow()
+        self.input.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
 
     def reject(self):
         owner = self.parent()

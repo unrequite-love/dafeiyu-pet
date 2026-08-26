@@ -5,9 +5,27 @@ import logging
 
 import psutil
 
-from dafeiyu_pet.constants import CPU_WARN_PERCENT, GPU_WARN_TEMP_C, RAM_WARN_PERCENT
+from dafeiyu_pet.constants import (
+    CPU_WARN_PERCENT,
+    GPU_WARN_TEMP_C,
+    MONITOR_INTERVAL_S,
+    MONITOR_MAX_INTERVAL_S,
+    MONITOR_MIN_INTERVAL_S,
+    RAM_WARN_PERCENT,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def clamp_interval(value: object, default: float = MONITOR_INTERVAL_S) -> float:
+    """清洗配置中的检测间隔：非法/越界值回退默认并钳制到 [5, 3600] 秒。"""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    if v != v or v <= 0:  # NaN 或非正数
+        return default
+    return min(max(v, MONITOR_MIN_INTERVAL_S), MONITOR_MAX_INTERVAL_S)
 
 try:
     import pynvml

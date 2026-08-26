@@ -18,6 +18,9 @@ DEFAULTS: dict[str, Any] = {
     "y": None,
     "ds_api_key": "",
     "ds_thinking": False,
+    "use_proxy": True,
+    "monitor_enabled": False,
+    "monitor_interval_s": 10.0,
     "city": "深圳",
 }
 

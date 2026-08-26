@@ -9,6 +9,7 @@ import random
 import subprocess
 import sys
 import threading
+import time
 
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPolygonF, QPixmap
@@ -26,7 +27,7 @@ from dafeiyu_pet.config import PetConfig
 from dafeiyu_pet.constants import (
     BASE_SPRITE_H,
     BUBBLE_H,
-    BUBBLE_SECONDS,
+    ERROR_BUBBLE_SECONDS,
     CLICK_INTERVAL_MS,
     DEFAULT_CITY,
     DRAG_LINES,
@@ -35,14 +36,15 @@ from dafeiyu_pet.constants import (
     INNER_LINES,
     LINES,
     MARGIN,
-    MONITOR_INTERVAL_MS,
+    MONITOR_MAX_INTERVAL_S,
+    MONITOR_MIN_INTERVAL_S,
     REACT_LINES,
     SIZE_LEVELS,
     SPEAK_COOLDOWN_TICKS,
     SPEED,
     TICK_MS,
 )
-from dafeiyu_pet.logic import choose_direction, sprite_key
+from dafeiyu_pet.logic import bubble_duration, choose_direction, sprite_key
 from dafeiyu_pet.paths import APP_DIR, CONFIG_PATH, PYTHONW, SPRITE_DIR
 from dafeiyu_pet.services.deepseek import (
     ChatHistory,
@@ -52,7 +54,7 @@ from dafeiyu_pet.services.deepseek import (
     DeepSeekTimeout,
     build_messages,
 )
-from dafeiyu_pet.services.monitor import evaluate, read_gpu_temp, read_stats
+from dafeiyu_pet.services.monitor import clamp_interval, evaluate, read_gpu_temp, read_stats
 from dafeiyu_pet.services.weather import fetch_weather
 from dafeiyu_pet.ui.chat_dialog import ChatDialog
 from dafeiyu_pet.ui.food_panel import FoodPanel
@@ -128,7 +130,10 @@ class PetWindow(QWidget):
         # ---- AI 相关 ----
         self.ds_busy = False
         self.history = ChatHistory()
-        self._say_queue: list[str] = []  # 后台线程 → 主线程的气泡消息队列
+        self._ds_client: DeepSeekClient | None = None  # 缓存客户端（Session 连接复用）
+        self._ds_client_sig: tuple | None = None
+        self._say_queue: list[tuple[str, float | None]] = []  # 后台线程 → 主线程的气泡消息队列
+        self._main_queue: list = []  # 后台线程 → 主线程的回调队列（弹窗等）
 
         # ---- 聊天暂停标志 ----
         self.chat_paused = False
@@ -166,6 +171,16 @@ class PetWindow(QWidget):
             self._apply_passthrough(True)
 
     # ---------- AI ----------
+    def _get_ds_client(self, thinking: bool) -> DeepSeekClient:
+        """按（key, thinking, 代理）签名缓存客户端，复用底层 Session 连接。"""
+        key = self.cfg.get("ds_api_key", "")
+        use_proxy = bool(self.cfg.get("use_proxy", True))
+        sig = (key, thinking, use_proxy)
+        if self._ds_client is None or self._ds_client_sig != sig:
+            self._ds_client = DeepSeekClient(key, thinking=thinking, use_proxy=use_proxy)
+            self._ds_client_sig = sig
+        return self._ds_client
+
     def call_deepseek(self, user_msg: str) -> None:
         """发送一句话给 DeepSeek，回复经队列回主线程显示。"""
         if self.ds_busy:
@@ -182,18 +197,25 @@ class PetWindow(QWidget):
 
         def worker() -> None:
             try:
-                reply = DeepSeekClient(key, thinking=thinking).chat(messages)
+                reply = self._get_ds_client(thinking).chat(messages)
                 self.history.append_turn(user_msg, reply)
                 self._queue_say(reply)
             except DeepSeekTimeout:
-                self._queue_say("请求超时，检查网络")
-            except DeepSeekConnectionError:
-                self._queue_say("连接失败，检查网络")
+                # 超时/连接失败必须留日志：控制台看不到请求，只能靠本地排查
+                logger.warning("DeepSeek 请求超时（thinking=%s）", thinking)
+                self._queue_say(
+                    "请求超时！右键菜单「测试DS连接」排查", duration=ERROR_BUBBLE_SECONDS
+                )
+            except DeepSeekConnectionError as e:
+                logger.warning("DeepSeek 连接失败（断网/代理/DNS）: %s", e)
+                self._queue_say(
+                    "连接失败！右键菜单「测试DS连接」排查", duration=ERROR_BUBBLE_SECONDS
+                )
             except DeepSeekError as e:
-                self._queue_say(f"API错误: {str(e)[:12]}")
+                self._queue_say(f"API错误: {str(e)[:40]}", duration=ERROR_BUBBLE_SECONDS)
             except Exception as e:  # noqa: BLE001 —— 兜底，不让工作线程静默挂掉
                 logger.exception("DeepSeek 调用失败")
-                self._queue_say(f"请求失败: {str(e)[:12]}")
+                self._queue_say(f"请求失败: {str(e)[:40]}", duration=ERROR_BUBBLE_SECONDS)
             finally:
                 self.ds_busy = False
 
@@ -244,6 +266,22 @@ class PetWindow(QWidget):
                     Qt.AlignmentFlag.AlignCenter,
                     ln,
                 )
+
+        # AI 思考中指示：无气泡显示时，头顶冒动态省略号（20ms/帧自动刷新）
+        if self.ds_busy and not (self.bubble_text and now < self.bubble_until):
+            bfont = QFont(self.bubble_font)
+            fm = QFontMetrics(bfont)
+            dots = "." * (1 + int(now * 2.5) % 3)
+            text = f"💭{dots}"
+            tw = fm.horizontalAdvance(text) + 20
+            th = fm.height() + 12
+            tx = (self.width() - tw) / 2
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(255, 255, 255, 220))
+            p.drawRoundedRect(QRectF(tx, 8, tw, th), 10, 10)
+            p.setPen(QColor(120, 120, 140))
+            p.setFont(bfont)
+            p.drawText(QRectF(tx, 8, tw, th), Qt.AlignmentFlag.AlignCenter, text)
 
         cx = self.width() / 2
         walking = self.target is not None and not self.dragging
@@ -312,11 +350,15 @@ class PetWindow(QWidget):
     def tick(self):
         self.t += 1
 
-        # 后台线程排队的气泡消息统一在主线程弹出（线程安全）
+        # 后台线程排队的消息统一在主线程处理（线程安全）：气泡 + 主线程回调
         if self._say_queue:
-            for text in self._say_queue:
-                self.say(text)
+            for text, duration in self._say_queue:
+                self.say(text, duration=duration)
             self._say_queue.clear()
+        if self._main_queue:
+            callbacks, self._main_queue = self._main_queue, []
+            for fn in callbacks:
+                fn()
 
         self.check_system_status()
 
@@ -402,28 +444,40 @@ class PetWindow(QWidget):
                 else:
                     self.say(random.choice(LINES))
 
-    def _queue_say(self, text: str) -> None:
+    def _queue_say(self, text: str, duration: float | None = None) -> None:
         """后台线程调用：只入队，由主线程 tick 统一弹出显示。"""
-        self._say_queue.append(text)
+        self._say_queue.append((text, duration))
 
-    def say(self, text: str, inner: bool = False) -> None:
+    def _post(self, fn) -> None:
+        """后台线程调用：把回调排入主线程执行（如弹 QMessageBox）。"""
+        self._main_queue.append(fn)
+
+    def say(
+        self, text: str, inner: bool = False, duration: float | None = None
+    ) -> None:
         if text == self.last_line and not text.startswith("天气"):
             return
         self.last_line = text
         self.bubble_inner = inner
         self.bubble_text = f"（{text}）" if inner else text
-        self.bubble_until = self.t * TICK_MS / 1000.0 + BUBBLE_SECONDS
+        if duration is None:
+            duration = bubble_duration(text)  # 长文本停留更久，给足阅读时间
+        self.bubble_until = self.t * TICK_MS / 1000.0 + duration
         self.update()
 
     def check_system_status(self) -> None:
+        # 默认关闭，右键菜单「系统监控」开启后才检测
+        if not self.cfg.get("monitor_enabled", False):
+            return
+        interval_ms = clamp_interval(self.cfg.get("monitor_interval_s")) * 1000
         now = self.t * TICK_MS
-        if now - self.last_system_check < MONITOR_INTERVAL_MS:
+        if now - self.last_system_check < interval_ms:
             return
         self.last_system_check = now
         cpu, ram = read_stats()
         msg = evaluate(cpu, ram, read_gpu_temp())
         if msg:
-            self.say(msg)
+            self.say(msg, duration=bubble_duration(msg))
 
     # ---------- 鼠标事件 ----------
     def mousePressEvent(self, e):
@@ -514,7 +568,7 @@ class PetWindow(QWidget):
 
         def worker() -> None:
             try:
-                temp, desc = fetch_weather(city)
+                temp, desc = fetch_weather(city, use_proxy=bool(self.cfg.get("use_proxy", True)))
                 self._queue_say(f"{city}今天{temp}°，天气{desc}")
             except Exception as e:  # noqa: BLE001 —— 后台线程兜底
                 logger.warning("天气获取失败: %s", e)
@@ -538,12 +592,23 @@ class PetWindow(QWidget):
             a.setChecked(abs(self.cur_h - BASE_SPRITE_H * mult) < 2)
             a.triggered.connect(lambda _, v=mult: self.set_size(v))
         m.addAction("设置 Key", self._set_key_dialog)
+        m.addAction("测试DS连接", self._test_ds_connection)
+        pxy = m.addAction("使用系统代理")
+        pxy.setCheckable(True)
+        pxy.setChecked(bool(self.cfg.get("use_proxy", True)))
+        pxy.triggered.connect(self._toggle_use_proxy)
         tk = m.addAction("深度思考")
         tk.setCheckable(True)
         tk.setChecked(bool(self.cfg.get("ds_thinking", False)))
         tk.triggered.connect(self._toggle_thinking)
         m.addAction("设置城市", self._set_city_dialog)
         m.addAction("查看天气", self._get_weather)
+        m.addSeparator()
+        mon = m.addAction("系统监控")
+        mon.setCheckable(True)
+        mon.setChecked(bool(self.cfg.get("monitor_enabled", False)))
+        mon.triggered.connect(self._toggle_monitor)
+        m.addAction("监控间隔", self._set_monitor_interval)
         m.addSeparator()
         m.addAction("显示/隐藏", self.toggle_visible)
         m.addAction("回到屏幕内", self.snap_into_screen)
@@ -572,14 +637,99 @@ class PetWindow(QWidget):
             self.cfg.get("ds_api_key", ""),
         )
         if ok and key.strip():
-            self.cfg.set("ds_api_key", key.strip())
-            self.say("Key 设置成功！")
+            key = key.strip()
+            self.cfg.set("ds_api_key", key)
+            self.say("Key 已保存，验证中…")
+            self._verify_key_async(key)
         elif ok and not key.strip():
             self.say("Key 不能为空")
+
+    def _verify_key_async(self, key: str) -> None:
+        """保存 Key 后立即 ping 一次，当场发现无效 Key（不发历史）。"""
+
+        def worker() -> None:
+            use_proxy = bool(self.cfg.get("use_proxy", True))
+            try:
+                DeepSeekClient(key, use_proxy=use_proxy).chat(
+                    build_messages(DS_SYSTEM_PROMPT, None, "ping")
+                )
+                self._queue_say("Key 有效，随时开聊！")
+            except Exception as e:  # noqa: BLE001 —— 验证入口需兜住一切异常
+                logger.warning("Key 验证失败: %r", e)
+                self._queue_say(f"Key 验证失败: {str(e)[:40]}", duration=ERROR_BUBBLE_SECONDS)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _toggle_use_proxy(self, on: bool) -> None:
+        self.cfg.set("use_proxy", bool(on))
+        self.say("已启用系统代理" if on else "已绕过代理，直连模式")
+
+    def _toggle_monitor(self, on: bool) -> None:
+        self.cfg.set("monitor_enabled", bool(on))
+        if on:
+            self.last_system_check = 0  # 立即检测一次，给出即时反馈
+            self.say("系统监控已开启，我帮你盯着~")
+        else:
+            self.say("系统监控已关闭")
+
+    def _set_monitor_interval(self) -> None:
+        current = clamp_interval(self.cfg.get("monitor_interval_s"))
+        value, ok = QInputDialog.getDouble(
+            self,
+            "监控间隔",
+            "检测间隔（秒，5~3600）:",
+            current,
+            MONITOR_MIN_INTERVAL_S,
+            MONITOR_MAX_INTERVAL_S,
+            0,
+        )
+        if ok:
+            self.cfg.set("monitor_interval_s", float(value))
+            self.say(f"监控间隔已设为{value:g}秒")
 
     def _toggle_thinking(self, on: bool) -> None:
         self.cfg.set("ds_thinking", bool(on))
         self.say("开启深度思考，回话要想久一点啦～" if on else "不做脑内小剧场了")
+
+    def _test_ds_connection(self) -> None:
+        """诊断：真实发一条消息到 DeepSeek，结果用持久弹窗展示（不靠一闪而过的气泡）。"""
+        key = self.cfg.get("ds_api_key", "")
+        if not key:
+            QMessageBox.information(
+                self, "测试DS连接", "还没设置 Key，请先在右键菜单「设置 Key」。"
+            )
+            return
+
+        self.say("测一下电线…")
+
+        def worker() -> None:
+            t0 = time.monotonic()
+            try:
+                reply = self._get_ds_client(False).chat(
+                    build_messages(DS_SYSTEM_PROMPT, None, "ping")
+                )
+                latency = (time.monotonic() - t0) * 1000
+                self._queue_say("连通没问题！")
+                self._post(
+                    lambda: QMessageBox.information(
+                        self, "测试DS连接", f"成功！耗时 {latency:.0f} ms\n模型回复：{reply}"
+                    )
+                )
+            except Exception as e:  # noqa: BLE001 —— 诊断入口需兜住一切异常
+                logger.warning("DS 连接测试失败: %r", e)
+                self._post(
+                    lambda err=e: QMessageBox.warning(
+                        self,
+                        "测试DS连接",
+                        f"失败：{err}\n\n"
+                        "排查建议：\n"
+                        "1. Key 是否有效（platform.deepseek.com 查看）\n"
+                        "2. 是否开了代理/VPN 拦截 api.deepseek.com\n"
+                        "3. 详细原因见 logs/pet.log",
+                    )
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Context:

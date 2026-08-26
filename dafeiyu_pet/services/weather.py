@@ -26,8 +26,26 @@ def parse_weather(data: dict) -> tuple[str, str]:
     return temp, WEATHER_DESC_MAP.get(raw_desc, raw_desc)
 
 
-def fetch_weather(city: str, timeout: float = WEATHER_TIMEOUT_S) -> tuple[str, str]:
+_session: requests.Session | None = None
+_session_trust_env: bool | None = None
+
+
+def _get_session(use_proxy: bool) -> requests.Session:
+    """模块级 Session 复用；代理设置变化时重建。"""
+    global _session, _session_trust_env
+    if _session is None or _session_trust_env != use_proxy:
+        _session = requests.Session()
+        _session.trust_env = use_proxy
+        _session_trust_env = use_proxy
+    return _session
+
+
+def fetch_weather(
+    city: str, timeout: float = WEATHER_TIMEOUT_S, use_proxy: bool = True
+) -> tuple[str, str]:
     """查询指定城市当前天气，失败抛 requests 异常。"""
-    resp = requests.get(build_url(city), timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
+    resp = _get_session(use_proxy).get(
+        build_url(city), timeout=timeout, headers={"User-Agent": "Mozilla/5.0"}
+    )
     resp.raise_for_status()
     return parse_weather(resp.json())
