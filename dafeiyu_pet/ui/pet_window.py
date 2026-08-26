@@ -498,6 +498,13 @@ class PetWindow(QWidget):
         self.bubble_until = self.t * TICK_MS / 1000.0 + duration
         self.update()
 
+    def clear_bubble(self) -> None:
+        """立即清空当前气泡（用于避免与其他弹出层重叠）。"""
+        self.bubble_text = ""
+        self.bubble_until = 0.0
+        self.last_line = ""  # 允许随后重复同一句台词
+        self.update()
+
     def check_system_status(self) -> None:
         # 默认关闭，右键菜单「系统监控」开启后才检测
         if not self.cfg.get("monitor_enabled", False):
@@ -554,6 +561,8 @@ class PetWindow(QWidget):
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
             self._click_timer.stop()
+            # 气泡绘制区与喂食面板位置重叠，同时显示会互相遮挡
+            self.clear_bubble()
             self.food_panel.popup_at(self.x() + self.width() / 2, self.y() + BUBBLE_H)
 
     def _on_single_click(self):
@@ -629,7 +638,11 @@ class PetWindow(QWidget):
             a.setCheckable(True)
             a.setChecked(abs(self.cur_h - BASE_SPRITE_H * mult) < 2)
             a.triggered.connect(lambda _, v=mult: self.set_size(v))
-        m.addAction("设置 Key", self._set_key_dialog)
+        # 设置子菜单：收纳低频配置项，控制一级菜单长度
+        settings_menu = m.addMenu("设置")
+        settings_menu.addAction("设置 Key", self._set_key_dialog)
+        settings_menu.addAction("设置城市", self._set_city_dialog)
+        settings_menu.addAction("监控间隔", self._set_monitor_interval)
         m.addAction("测试DS连接", self._test_ds_connection)
         m.addAction("聊天记录", self._show_chat_log)
         pxy = m.addAction("使用系统代理")
@@ -640,14 +653,12 @@ class PetWindow(QWidget):
         tk.setCheckable(True)
         tk.setChecked(bool(self.cfg.get("ds_thinking", False)))
         tk.triggered.connect(self._toggle_thinking)
-        m.addAction("设置城市", self._set_city_dialog)
         m.addAction("查看天气", self._get_weather)
         m.addSeparator()
         mon = m.addAction("系统监控")
         mon.setCheckable(True)
         mon.setChecked(bool(self.cfg.get("monitor_enabled", False)))
         mon.triggered.connect(self._toggle_monitor)
-        m.addAction("监控间隔", self._set_monitor_interval)
         m.addSeparator()
         m.addAction("显示/隐藏", self.toggle_visible)
         m.addAction("回到屏幕内", self.snap_into_screen)
