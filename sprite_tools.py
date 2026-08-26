@@ -15,11 +15,12 @@
     base = sprite_from_white_bg("raw/正面.png", height=340)      # 抠图+去污+统一高度
     for h, im in build_sizes(base, [187, 238, 306]).items():      # 生成多尺寸
         im.save(f"sprites/正面_{h}.png")
-    premult_resize(base, 64).save("sprites/icon.png")             # 图标
+    premult_resize(base, 64).save("sprites/正面_icon.png")        # 该图的图标候选
 
 命令行用法：
     python sprite_tools.py --src raw_sprites --out sprites --height 340 ^
         --sizes 187,238,306 --icon 64
+        （--icon 为每张图各生成 {name}_icon.png，便于挑选最终图标）
     python sprite_tools.py --src raw --out out --names front,side,back
         （--names 缺省时自动扫描 src 下全部 *.png）
 """
@@ -213,7 +214,8 @@ def process_directory(
     - names: 指定文件名列表（不含扩展名）；None 则自动扫描 src 下全部 *.png
     - height: 基准高度，输出 {name}.png
     - sizes: 附加尺寸高度列表，输出 {name}_{h}.png
-    - icon: 附加生成 icon.png（取第一个图预乘缩放，保持宽高比）
+    - icon: 附加为**每张图**生成 {name}_icon.png（预乘缩放，保持宽高比），
+      便于用户预览对比后挑选合适的一张作为最终图标
     - decontaminate_edges: 是否做白底去混合（推荐 True）
     返回生成的文件路径列表。
     """
@@ -239,14 +241,12 @@ def process_directory(
                 im.save(p)
                 written.append(p)
                 print(f"{name}_{h}: {im.size} -> {p}")
-    if icon is not None and names:
-        icon_im = premult_resize(
-            sprite_from_white_bg(src_dir / f"{names[0]}.png"), icon
-        )
-        p = out_dir / "icon.png"
-        icon_im.save(p)
-        written.append(p)
-        print(f"icon: {icon_im.size} -> {p}")
+        if icon is not None:
+            icon_im = premult_resize(base, icon)
+            p = out_dir / f"{name}_icon.png"
+            icon_im.save(p)
+            written.append(p)
+            print(f"{name}_icon: {icon_im.size} -> {p}")
     return written
 
 
@@ -265,7 +265,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--height", type=int, default=340, help="基准高度(px)")
     parser.add_argument("--sizes", default="", help="附加尺寸高度列表（逗号分隔），如 187,238,306")
-    parser.add_argument("--icon", type=int, default=None, help="额外生成图标尺寸(px)，如 64")
+    parser.add_argument(
+        "--icon", type=int, default=None,
+        help="为每张图生成图标尺寸(px)，输出 {name}_icon.png，便于挑选最终图标",
+    )
     parser.add_argument("--no-decontam", action="store_true", help="跳过白底去混合（一般不建议）")
     args = parser.parse_args(argv)
 

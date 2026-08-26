@@ -104,10 +104,18 @@ def test_process_directory_end_to_end(tmp_path, capsys):
     )
 
     stems = sorted(p.name for p in written)
-    assert stems == ["front.png", "front_50.png", "icon.png", "side.png", "side_50.png"]
-    icon_im = Image.open(out / "icon.png")
-    assert icon_im.height == 32  # 等比缩放，只锁定目标高度
-    assert capsys.readouterr().out.count("->") == 5
+    # 每张图各生成一个图标候选（front_icon / side_icon），不再是单一 icon.png
+    assert stems == [
+        "front.png",
+        "front_50.png",
+        "front_icon.png",
+        "side.png",
+        "side_50.png",
+        "side_icon.png",
+    ]
+    assert Image.open(out / "front_icon.png").height == 32  # 等比缩放，只锁定目标高度
+    assert Image.open(out / "side_icon.png").height == 32
+    assert capsys.readouterr().out.count("->") == 6
 
 
 def test_process_directory_auto_scan(tmp_path):

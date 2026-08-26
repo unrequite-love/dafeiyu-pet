@@ -111,11 +111,11 @@ pyinstaller --noconfirm dafeiyu_pet.spec   # 需先 pip install pyinstaller
 把新的三视图（白底）放到 `raw_sprites/` 目录（正面.png / 侧面.png / 背面.png），然后：
 
 ```bash
-# 一条命令全流程：抠图 + 去污 + 多尺寸 + 图标
+# 一条命令全流程：抠图 + 去污 + 多尺寸 + 每图一个图标候选
 python sprite_tools.py --src raw_sprites --out sprites --names 正面,侧面,背面 --height 340 --sizes 187,238,306 --icon 64
 ```
 
-> `sprite_tools.py` 是**单文件零项目依赖**的工具箱（仅依赖 Pillow），可直接拷贝到其他项目复用；文件名与尺寸组合均可自由指定（`--names` 缺省时自动扫描目录下全部 PNG）。
+> `sprite_tools.py` 是**单文件零项目依赖**的工具箱（仅依赖 Pillow），可直接拷贝到其他项目复用；文件名与尺寸组合均可自由指定（`--names` 缺省时自动扫描目录下全部 PNG）。`--icon 64` 会为**每张图**生成 `{name}_icon.png`，挑选合适的一张改名为 `icon.png` 即可作为托盘图标。
 
 ## 项目结构
 
